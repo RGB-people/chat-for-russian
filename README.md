@@ -28,7 +28,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/YOUR_USERNAME/roblox-
 Откройте delta-config.lua и измените:
 ```lua
 local Config = {
-    ServerURL = "https://chat-for-russian-default-rtdb.europe-west1.firebasedatabase.app/",
+    ServerURL = "https://chat-for-russian-default-rtdb.europe-west1.firebasedatabase.app/messages.json",
     AutoConnect = true,
     Language = "ru", -- или "auto"
     VoiceKey = Enum.KeyCode.V,
