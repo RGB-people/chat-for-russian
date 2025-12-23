@@ -33,11 +33,8 @@ function ProfanityFilter:LoadBadWords()
     
     print("📦 Загрузка базы матов...")
     
-    -- Попробуем загрузить из разных источников
     local urls = {
-        "https://raw.githubusercontent.com/ВАШ_НИК/chat-for-russian/main/data/bad-words.json",
-        "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/ru",
-        "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+        "https://raw.githubusercontent.com/RGB-people/chat-for-russian/main/data/bad-words.json",
     }
     
     for _, url in ipairs(urls) do
@@ -76,7 +73,7 @@ end
 
 -- Загрузка таблицы замен символов
 function ProfanityFilter:LoadReplacements()
-    local url = "https://raw.githubusercontent.com/ВАШ_НИК/chat-for-russian/main/data/replacements.json"
+    local url = "https://raw.githubusercontent.com/RGB-people/chat-for-russian/main/data/replacements.json"
     
     local success, data = pcall(function()
         local content = game:HttpGet(url, true)
