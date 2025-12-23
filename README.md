@@ -460,16 +460,6 @@ chat-for-russian/
 │   ├── 📄 replacements.json     # Таблица замен символов
 │   └── 📄 languages.json        # Языковые настройки
 │
-├── 📁 docs/                     # Документация
-│   ├── 📄 API.md               # API документация
-│   ├── 📄 TROUBLESHOOTING.md   # Решение проблем
-│   └── 📄 EXAMPLES.md          # Примеры кода
-│
-├── 📁 plugins/                  # Плагины (в разработке)
-│   ├── 📄 auto-translate.lua   # Автоперевод
-│   └── 📄 chat-games.lua       # Игры в чате
-│
-├── 📄 .gitignore               # Игнорируемые файлы
 ├── 📄 LICENSE                  # Лицензия MIT
 └── 📄 README.md                # Этот файл
 ```
@@ -487,11 +477,6 @@ chat-for-russian/
 - `bad-words.json` - База запрещенных слов (5 языков)
 - `replacements.json` - Таблица замен символов для leet-speak
 - `languages.json` - Языковые настройки и переводы
-
-#### **Документация:**
-- `API.md` - Полное описание API системы
-- `TROUBLESHOOTING.md` - Решение распространенных проблем
-- `EXAMPLES.md` - Примеры кода и интеграций
 
 ---
 
@@ -571,7 +556,7 @@ loadstring(game:HttpGet("URL"))()
 ```
 MIT License
 
-Copyright (c) 2024 Chat for Russian
+Copyright (c) 2025 Chat for Russian
 
 Данная лицензия разрешает лицам, получившим копию данного программного обеспечения 
 и сопутствующей документации (в дальнейшем именуемыми «Программное Обеспечение»), 
