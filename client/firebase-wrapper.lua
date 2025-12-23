@@ -1,1270 +1,763 @@
--- 🇷🇺 Chat for Russian - Основной скрипт
--- Полный чат с Firebase, антиматом и голосовыми индикаторами
+-- 🇷🇺 Firebase Realtime Database Wrapper для Roblox
+-- Поддержка чата, антимат, реальное время, автоподгрузка
 
-print("=" . rep(60, "="))
-print("🇷🇺 CHAT FOR RUSSIAN - FIREBASE EDITION")
-print("=" . rep(60, "="))
-
-local startTime = os.clock()
-
--- ========== ЗАГРУЗКА МОДУЛЕЙ ==========
-
--- Firebase Wrapper
-local FirebaseWrapper
-local firebaseSuccess, firebaseModule = pcall(function()
-    return loadstring(game:HttpGet(
-        "https://raw.githubusercontent.com/RGB-people/chat-for-russian/main/client/firebase-wrapper.lua",
-        true
-    ))()
-end)
-
-if firebaseSuccess and firebaseModule then
-    FirebaseWrapper = firebaseModule
-    print("✅ Firebase Wrapper загружен")
-else
-    warn("❌ Ошибка загрузки Firebase:", firebaseModule)
-    error("Не удалось загрузить Firebase модуль")
-end
-
--- Антимат фильтр
-local ProfanityFilter
-local filterSuccess, filterModule = pcall(function()
-    return loadstring(game:HttpGet(
-        "https://raw.githubusercontent.com/RGB-people/chat-for-russian/main/client/profanity-filter.lua",
-        true
-    ))()
-end)
-
-if filterSuccess and filterModule then
-    ProfanityFilter = filterModule
-    ProfanityFilter:LoadBadWords()
-    print("✅ Антимат фильтр загружен")
-else
-    warn("⚠️ Антимат фильтр не загружен, используем базовую защиту")
-    ProfanityFilter = {
-        Filter = function(text) return text end,
-        Check = function(text) return false end
-    }
-end
-
--- ========== КОНФИГУРАЦИЯ ==========
-
-local Config = {
-    -- 🔥 Firebase
-    Firebase = {
-        baseUrl = "https://chat-for-russian-default-rtdb.europe-west1.firebasedatabase.app/",
-    },
-    
-    -- 🎮 Интерфейс
-    UI = {
-        theme = "dark", -- dark, light, blue, purple
-        position = "bottom-left", -- bottom-left, bottom-right, top-left, top-right
-        width = 0.35,
-        height = 0.4,
-        backgroundTransparency = 0.15,
-        messageLimit = 100,
-        showTimestamps = true,
-        timeFormat = "%H:%M",
-        showAvatars = true,
-        animations = true,
-        font = Enum.Font.SourceSans,
-        fontSize = 14
-    },
-    
-    -- ⌨️ Управление
-    Controls = {
-        openChat = Enum.KeyCode.T,
-        toggleVisibility = Enum.KeyCode.F8,
-        clearChat = Enum.KeyCode.F5,
-        voiceTalk = Enum.KeyCode.V,
-        screenshot = Enum.KeyCode.F12,
-        settings = Enum.KeyCode.F9
-    },
-    
-    -- 🛡️ Модерация
-    Moderation = {
-        filterEnabled = true,
-        filterStrength = "strict", -- strict, moderate, lenient
-        filterLanguages = {"ru", "en", "uk", "be", "kz"},
-        maxMessageLength = 500,
-        messageCooldown = 1, -- секунды
-        allowLinks = false,
-        allowImages = false,
-        reportSystem = true
-    },
-    
-    -- 🔊 Голосовой чат
-    Voice = {
-        enabled = true,
-        pushToTalk = true,
-        voiceKey = Enum.KeyCode.V,
-        voiceActivity = false,
-        showIndicators = true,
-        indicatorSize = 0.02,
-        indicatorColor = Color3.fromRGB(0, 255, 0)
-    },
-    
-    -- 🌍 Переводчик
-    Translation = {
-        enabled = false, -- Будет в следующем обновлении
-        autoDetect = true,
-        defaultLanguage = "ru",
-        showOriginal = false
-    },
-    
-    -- 🎨 Цвета
-    Colors = {
-        background = Color3.fromRGB(25, 25, 35),
-        primary = Color3.fromRGB(0, 120, 215),
-        success = Color3.fromRGB(0, 200, 100),
-        error = Color3.fromRGB(255, 50, 50),
-        warning = Color3.fromRGB(255, 150, 0),
-        text = Color3.fromRGB(255, 255, 255),
-        system = Color3.fromRGB(0, 200, 255),
-        selfMessage = Color3.fromRGB(0, 255, 100),
-        otherMessage = Color3.fromRGB(100, 150, 255)
-    },
-    
-    -- ⚙️ Дополнительно
-    Features = {
-        autoConnect = true,
-        saveHistory = true,
-        notifications = true,
-        soundEffects = true,
-        typingIndicator = true,
-        readReceipts = false,
-        offlineMode = true
-    }
-}
-
--- ========== СЕРВИСЫ ==========
-
-local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TextService = game:GetService("TextService")
-local TeleportService = game:GetService("TeleportService")
-local StarterGui = game:GetService("StarterGui")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- ========== СИСТЕМА ЧАТА ==========
-
-local ChatSystem = {
-    -- Компоненты
-    Firebase = nil,
-    GUI = nil,
-    Voice = nil,
-    
-    -- Состояние
-    isInitialized = false,
-    isConnected = false,
-    isVisible = true,
-    isTyping = false,
-    
-    -- Данные
-    messages = {},
-    users = {},
-    settings = {},
-    cache = {},
-    
-    -- Статистика
-    stats = {
-        messagesSent = 0,
-        messagesReceived = 0,
-        wordsFiltered = 0,
-        errors = 0,
-        startTime = os.time(),
-        uptime = 0
+local FirebaseWrapper = {
+    _config = {
+        baseUrl = nil,
+        messagesPath = "/messages",
+        usersPath = "/users",
+        statsPath = "/stats",
+        apiKey = nil,
+        authToken = nil,
+        connected = false,
+        lastMessageId = nil,
+        messageListeners = {},
+        userListeners = {},
+        cleanupInterval = 300, -- 5 минут
+        maxMessages = 1000,
+        reconnectAttempts = 3
     },
     
-    -- Время
-    lastMessageTime = 0,
-    lastSyncTime = 0,
-    lastTypingUpdate = 0
+    _cache = {
+        messages = {},
+        users = {},
+        lastSync = 0,
+        pendingMessages = {},
+        messageQueue = {}
+    },
+    
+    _events = {
+        OnMessage = Instance.new("BindableEvent"),
+        OnUserJoin = Instance.new("BindableEvent"),
+        OnUserLeave = Instance.new("BindableEvent"),
+        OnError = Instance.new("BindableEvent"),
+        OnConnected = Instance.new("BindableEvent"),
+        OnDisconnected = Instance.new("BindableEvent")
+    }
 }
 
--- ========== ИНИЦИАЛИЗАЦИЯ FIREBASE ==========
+-- ========== ИНИЦИАЛИЗАЦИЯ ==========
 
-function ChatSystem:InitFirebase()
-    print("🔥 Инициализация Firebase...")
-    
-    if not Config.Firebase.baseUrl then
-        warn("⚠️ Firebase URL не настроен, используем демо базу")
-        Config.Firebase.baseUrl = "https://chat-for-russian-demo.firebaseio.com"
+-- Инициализация Firebase
+function FirebaseWrapper:Init(config)
+    if not config or not config.baseUrl then
+        error("❌ Требуется baseUrl Firebase. Пример: https://project-id.firebaseio.com")
     end
     
-    self.Firebase = FirebaseWrapper:Init({
-        baseUrl = Config.Firebase.baseUrl
-    })
+    -- Настройки
+    self._config.baseUrl = config.baseUrl:gsub("/$", "") -- Убираем слеш в конце
+    self._config.apiKey = config.apiKey
+    self._config.authToken = config.authToken
+    self._config.connected = true
     
-    if self.Firebase:IsConnected() then
-        self.isConnected = true
-        print("✅ Успешно подключено к Firebase")
-        
-        -- Регистрация пользователя
-        self.Firebase:RegisterUser()
-        
-        -- Подписка на события
-        self:_setupFirebaseEvents()
-        
-        -- Загрузка истории
-        self:LoadMessageHistory()
-        
-        return true
+    -- Тестовое подключение
+    local testSuccess = self:_testConnection()
+    if not testSuccess then
+        warn("⚠️ Не удалось подключиться к Firebase, работаем в оффлайн режиме")
+        self._config.connected = false
     else
-        self.isConnected = false
-        warn("❌ Не удалось подключиться к Firebase, оффлайн режим")
-        return false
-    end
-end
-
--- Настройка событий Firebase
-function ChatSystem:_setupFirebaseEvents()
-    local events = self.Firebase:GetEvents()
-    
-    -- Новое сообщение
-    events.OnMessage.Event:Connect(function(message)
-        self:OnNewMessage(message)
-    end)
-    
-    -- Ошибка
-    events.OnError.Event:Connect(function(error)
-        warn("Firebase ошибка:", error)
-        self.stats.errors = self.stats.errors + 1
-    end)
-    
-    -- Подключено
-    events.OnConnected.Event:Connect(function()
-        self.isConnected = true
-        self:ShowSystemMessage("Подключено к серверу чата", "success")
-    end)
-    
-    -- Отключено
-    events.OnDisconnected.Event:Connect(function()
-        self.isConnected = false
-        self:ShowSystemMessage("Соединение с сервером потеряно", "error")
-    end)
-end
-
--- ========== ИНТЕРФЕЙС ==========
-
--- Создание интерфейса
-function ChatSystem:CreateGUI()
-    -- Удаляем старый GUI
-    if self.GUI and self.GUI.Main then
-        self.GUI.Main:Destroy()
-    end
-    
-    -- ScreenGui
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ChatForRussian"
-    screenGui.DisplayOrder = 100
-    screenGui.ResetOnSpawn = false
-    screenGui.IgnoreGuiInset = true
-    
-    -- Основной контейнер
-    local mainContainer = Instance.new("Frame")
-    mainContainer.Name = "MainContainer"
-    mainContainer.Size = UDim2.new(Config.UI.width, 0, Config.UI.height, 0)
-    mainContainer.Position = self:CalculateUIPosition()
-    mainContainer.BackgroundTransparency = 1
-    mainContainer.ClipsDescendants = true
-    
-    -- Основное окно
-    local mainWindow = Instance.new("Frame")
-    mainWindow.Name = "MainWindow"
-    mainWindow.Size = UDim2.new(1, 0, 1, 0)
-    mainWindow.BackgroundColor3 = Config.Colors.background
-    mainWindow.BackgroundTransparency = Config.UI.backgroundTransparency
-    
-    -- Скругление
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = mainWindow
-    
-    -- Тень
-    local shadow = Instance.new("ImageLabel")
-    shadow.Name = "Shadow"
-    shadow.Size = UDim2.new(1, 10, 1, 10)
-    shadow.Position = UDim2.new(-0.05, 0, -0.05, 0)
-    shadow.BackgroundTransparency = 1
-    shadow.Image = "rbxassetid://5554236805"
-    shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.ImageTransparency = 0.7
-    shadow.ScaleType = Enum.ScaleType.Slice
-    shadow.SliceCenter = Rect.new(23, 23, 277, 277)
-    shadow.Parent = mainWindow
-    shadow.ZIndex = -1
-    
-    -- Заголовок
-    local titleBar = self:CreateTitleBar()
-    titleBar.Parent = mainWindow
-    
-    -- Статус бар
-    local statusBar = self:CreateStatusBar()
-    statusBar.Parent = mainWindow
-    
-    -- Лента сообщений
-    local chatLog = self:CreateChatLog()
-    chatLog.Parent = mainWindow
-    
-    -- Панель ввода
-    local inputPanel = self:CreateInputPanel()
-    inputPanel.Parent = mainWindow
-    
-    -- Сборка
-    mainWindow.Parent = mainContainer
-    mainContainer.Parent = screenGui
-    screenGui.Parent = PlayerGui
-    
-    -- Сохраняем ссылки
-    self.GUI = {
-        Main = screenGui,
-        Container = mainContainer,
-        Window = mainWindow,
-        TitleBar = titleBar,
-        StatusBar = statusBar,
-        ChatLog = chatLog,
-        InputPanel = inputPanel,
-        MessageFrames = {}
-    }
-    
-    print("✅ Интерфейс создан")
-    return screenGui
-end
-
--- Создание заголовка
-function ChatSystem:CreateTitleBar()
-    local titleBar = Instance.new("Frame")
-    titleBar.Name = "TitleBar"
-    titleBar.Size = UDim2.new(1, 0, 0.07, 0)
-    titleBar.BackgroundColor3 = Config.Colors.primary
-    titleBar.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = titleBar
-    
-    -- Заголовок
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Size = UDim2.new(0.7, 0, 1, 0)
-    title.Position = UDim2.new(0.01, 0, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "🔥 Chat for Russian"
-    title.TextColor3 = Config.Colors.text
-    title.Font = Enum.Font.SourceSansBold
-    title.TextSize = 16
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Кнопки управления
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Name = "CloseButton"
-    closeBtn.Size = UDim2.new(0.08, 0, 0.8, 0)
-    closeBtn.Position = UDim2.new(0.91, 0, 0.1, 0)
-    closeBtn.BackgroundTransparency = 1
-    closeBtn.Text = "✕"
-    closeBtn.TextColor3 = Config.Colors.text
-    closeBtn.Font = Enum.Font.SourceSansBold
-    closeBtn.TextSize = 18
-    
-    local minimizeBtn = Instance.new("TextButton")
-    minimizeBtn.Name = "MinimizeButton"
-    minimizeBtn.Size = UDim2.new(0.08, 0, 0.8, 0)
-    minimizeBtn.Position = UDim2.new(0.82, 0, 0.1, 0)
-    minimizeBtn.BackgroundTransparency = 1
-    minimizeBtn.Text = "─"
-    minimizeBtn.TextColor3 = Config.Colors.text
-    minimizeBtn.Font = Enum.Font.SourceSansBold
-    minimizeBtn.TextSize = 18
-    
-    -- Сборка
-    title.Parent = titleBar
-    closeBtn.Parent = titleBar
-    minimizeBtn.Parent = titleBar
-    
-    -- Обработчики
-    closeBtn.MouseButton1Click:Connect(function()
-        self:ToggleVisibility()
-    end)
-    
-    minimizeBtn.MouseButton1Click:Connect(function()
-        self:ToggleMinimize()
-    end)
-    
-    -- Drag & Drop
-    self:SetupDrag(titleBar)
-    
-    return titleBar
-end
-
--- Создание статус бара
-function ChatSystem:CreateStatusBar()
-    local statusBar = Instance.new("Frame")
-    statusBar.Name = "StatusBar"
-    statusBar.Size = UDim2.new(1, 0, 0.05, 0)
-    statusBar.Position = UDim2.new(0, 0, 0.07, 0)
-    statusBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    statusBar.BorderSizePixel = 0
-    
-    -- Статус соединения
-    local statusDot = Instance.new("Frame")
-    statusDot.Name = "StatusDot"
-    statusDot.Size = UDim2.new(0.02, 0, 0.6, 0)
-    statusDot.Position = UDim2.new(0.01, 0, 0.2, 0)
-    statusDot.BackgroundColor3 = Config.Colors.success
-    statusDot.BorderSizePixel = 0
-    
-    local dotCorner = Instance.new("UICorner")
-    dotCorner.CornerRadius = UDim.new(1, 0)
-    dotCorner.Parent = statusDot
-    
-    -- Текст статуса
-    local statusText = Instance.new("TextLabel")
-    statusText.Name = "StatusText"
-    statusText.Size = UDim2.new(0.4, 0, 1, 0)
-    statusText.Position = UDim2.new(0.04, 0, 0, 0)
-    statusText.BackgroundTransparency = 1
-    statusText.Text = "Подключение..."
-    statusText.TextColor3 = Config.Colors.text
-    statusText.Font = Enum.Font.SourceSans
-    statusText.TextSize = 12
-    statusText.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Счетчик пользователей
-    local usersLabel = Instance.new("TextLabel")
-    usersLabel.Name = "UsersLabel"
-    usersLabel.Size = UDim2.new(0.3, 0, 1, 0)
-    usersLabel.Position = UDim2.new(0.65, 0, 0, 0)
-    usersLabel.BackgroundTransparency = 1
-    usersLabel.Text = "👥 1"
-    usersLabel.TextColor3 = Config.Colors.text
-    usersLabel.Font = Enum.Font.SourceSans
-    usersLabel.TextSize = 12
-    usersLabel.TextXAlignment = Enum.TextXAlignment.Right
-    
-    -- Сборка
-    statusDot.Parent = statusBar
-    statusText.Parent = statusBar
-    usersLabel.Parent = statusBar
-    
-    return statusBar
-end
-
--- Создание ленты сообщений
-function ChatSystem:CreateChatLog()
-    local chatLog = Instance.new("ScrollingFrame")
-    chatLog.Name = "ChatLog"
-    chatLog.Size = UDim2.new(1, -10, 0.78, -50)
-    chatLog.Position = UDim2.new(0, 5, 0.12, 5)
-    chatLog.BackgroundTransparency = 1
-    chatLog.ScrollBarThickness = 5
-    chatLog.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-    chatLog.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    chatLog.CanvasSize = UDim2.new(0, 0, 0, 0)
-    chatLog.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
-    chatLog.ScrollingDirection = Enum.ScrollingDirection.Y
-    
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 5)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Parent = chatLog
-    
-    return chatLog
-end
-
--- Создание панели ввода
-function ChatSystem:CreateInputPanel()
-    local inputPanel = Instance.new("Frame")
-    inputPanel.Name = "InputPanel"
-    inputPanel.Size = UDim2.new(1, -10, 0.1, 0)
-    inputPanel.Position = UDim2.new(0, 5, 0.9, 0)
-    inputPanel.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    inputPanel.BorderSizePixel = 0
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = inputPanel
-    
-    -- Поле ввода
-    local inputBox = Instance.new("TextBox")
-    inputBox.Name = "InputBox"
-    inputBox.Size = UDim2.new(1, -20, 1, -10)
-    inputBox.Position = UDim2.new(0, 10, 0, 5)
-    inputBox.BackgroundTransparency = 1
-    inputBox.TextColor3 = Config.Colors.text
-    inputBox.PlaceholderText = "Напишите сообщение... (Enter для отправки)"
-    inputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
-    inputBox.ClearTextOnFocus = false
-    inputBox.TextXAlignment = Enum.TextXAlignment.Left
-    inputBox.TextSize = Config.UI.fontSize
-    inputBox.Font = Config.UI.font
-    inputBox.ClipsDescendants = true
-    
-    -- Кнопка отправки
-    local sendButton = Instance.new("TextButton")
-    sendButton.Name = "SendButton"
-    sendButton.Size = UDim2.new(0.15, 0, 0.8, 0)
-    sendButton.Position = UDim2.new(0.84, 0, 0.1, 0)
-    sendButton.BackgroundColor3 = Config.Colors.primary
-    sendButton.Text = "➤"
-    sendButton.TextColor3 = Config.Colors.text
-    sendButton.Font = Enum.Font.SourceSansBold
-    sendButton.TextSize = 16
-    
-    local sendCorner = Instance.new("UICorner")
-    sendCorner.CornerRadius = UDim.new(0, 4)
-    sendCorner.Parent = sendButton
-    
-    -- Сборка
-    inputBox.Parent = inputPanel
-    sendButton.Parent = inputPanel
-    
-    -- Обработчики
-    inputBox.FocusLost:Connect(function(enterPressed)
-        if enterPressed and string.trim(inputBox.Text) ~= "" then
-            self:SendMessage(inputBox.Text)
-            inputBox.Text = ""
-        end
-    end)
-    
-    sendButton.MouseButton1Click:Connect(function()
-        if string.trim(inputBox.Text) ~= "" then
-            self:SendMessage(inputBox.Text)
-            inputBox.Text = ""
-            inputBox:CaptureFocus()
-        end
-    end)
-    
-    -- Автофокус при открытии чата
-    game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
-        if processed then return end
+        print("✅ Firebase подключен:", self._config.baseUrl)
+        self._events.OnConnected:Fire()
         
-        if input.KeyCode == Config.Controls.openChat then
-            inputBox:CaptureFocus()
-        end
-    end)
-    
-    return inputPanel
-end
-
--- ========== ОТОБРАЖЕНИЕ СООБЩЕНИЙ ==========
-
--- Добавление сообщения в ленту
-function ChatSystem:AddMessageToChat(messageData, isHistory)
-    if not self.GUI or not self.GUI.ChatLog then return end
-    
-    local chatLog = self.GUI.ChatLog
-    
-    -- Ограничение количества сообщений
-    if #self.GUI.MessageFrames >= Config.UI.messageLimit then
-        local oldest = self.GUI.MessageFrames[1]
-        if oldest then
-            oldest:Destroy()
-            table.remove(self.GUI.MessageFrames, 1)
-        end
+        -- Запускаем синхронизацию
+        self:_startSync()
     end
-    
-    -- Создаем фрейм сообщения
-    local messageFrame = self:CreateMessageFrame(messageData)
-    messageFrame.Parent = chatLog
-    messageFrame.LayoutOrder = #self.GUI.MessageFrames + 1
-    
-    -- Сохраняем
-    table.insert(self.GUI.MessageFrames, messageFrame)
-    table.insert(self.messages, messageData)
-    
-    -- Автоскролл если не загружаем историю
-    if not isHistory then
-        task.wait(0.01)
-        chatLog.CanvasPosition = Vector2.new(0, chatLog.AbsoluteCanvasSize.Y)
-    end
-    
-    -- Уведомление
-    if not isHistory and not messageData.system and Config.Features.notifications then
-        self:ShowNotification("Новое сообщение от " .. messageData.senderName)
-    end
-end
-
--- Создание фрейма сообщения
-function ChatSystem:CreateMessageFrame(message)
-    local frame = Instance.new("Frame")
-    frame.Name = "Message_" .. (#self.GUI.MessageFrames + 1)
-    frame.Size = UDim2.new(1, 0, 0, 0)
-    frame.AutomaticSize = Enum.AutomaticSize.Y
-    frame.BackgroundTransparency = 1
-    
-    -- Аватар (если включено)
-    if Config.UI.showAvatars and not message.system then
-        local avatar = Instance.new("ImageLabel")
-        avatar.Name = "Avatar"
-        avatar.Size = UDim2.new(0, 30, 0, 30)
-        avatar.Position = UDim2.new(0, 0, 0, 0)
-        avatar.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        avatar.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
-        
-        local avatarCorner = Instance.new("UICorner")
-        avatarCorner.CornerRadius = UDim.new(1, 0)
-        avatarCorner.Parent = avatar
-        
-        avatar.Parent = frame
-    end
-    
-    -- Информация об отправителе
-    local infoFrame = Instance.new("Frame")
-    infoFrame.Name = "InfoFrame"
-    infoFrame.Size = UDim2.new(1, -35, 0, 20)
-    infoFrame.Position = UDim2.new(0, 35, 0, 0)
-    infoFrame.BackgroundTransparency = 1
-    
-    -- Имя отправителя
-    local senderName = Instance.new("TextLabel")
-    senderName.Name = "SenderName"
-    senderName.Size = UDim2.new(0.7, 0, 1, 0)
-    senderName.BackgroundTransparency = 1
-    senderName.Text = message.senderName .. (message.system and "" : " ")
-    senderName.TextColor3 = message.system and Config.Colors.system 
-                          or (message.senderId == tostring(LocalPlayer.UserId) 
-                              and Config.Colors.selfMessage 
-                              or Config.Colors.otherMessage)
-    senderName.Font = Enum.Font.SourceSansBold
-    senderName.TextSize = 14
-    senderName.TextXAlignment = Enum.TextXAlignment.Left
-    
-    -- Время
-    if Config.UI.showTimestamps then
-        local timeText = Instance.new("TextLabel")
-        timeText.Name = "Time"
-        timeText.Size = UDim2.new(0.3, 0, 1, 0)
-        timeText.Position = UDim2.new(0.7, 0, 0, 0)
-        timeText.BackgroundTransparency = 1
-        timeText.Text = os.date(Config.UI.timeFormat, message.timestamp)
-        timeText.TextColor3 = Color3.fromRGB(150, 150, 150)
-        timeText.Font = Enum.Font.SourceSans
-        timeText.TextSize = 12
-        timeText.TextXAlignment = Enum.TextXAlignment.Right
-        
-        timeText.Parent = infoFrame
-    end
-    
-    senderName.Parent = infoFrame
-    infoFrame.Parent = frame
-    
-    -- Текст сообщения
-    local textFrame = Instance.new("Frame")
-    textFrame.Name = "TextFrame"
-    textFrame.Size = UDim2.new(1, -35, 0, 0)
-    textFrame.Position = UDim2.new(0, 35, 0, 20)
-    textFrame.BackgroundTransparency = 1
-    textFrame.AutomaticSize = Enum.AutomaticSize.Y
-    
-    local messageText = Instance.new("TextLabel")
-    messageText.Name = "MessageText"
-    messageText.Size = UDim2.new(1, 0, 0, 0)
-    messageText.AutomaticSize = Enum.AutomaticSize.Y
-    messageText.BackgroundTransparency = 1
-    messageText.Text = message.text
-    messageText.TextColor3 = Config.Colors.text
-    messageText.Font = Config.UI.font
-    messageText.TextSize = Config.UI.fontSize
-    messageText.TextWrapped = true
-    messageText.TextXAlignment = Enum.TextXAlignment.Left
-    messageText.TextYAlignment = Enum.TextYAlignment.Top
-    
-    -- Если сообщение отфильтровано, добавляем иконку
-    if message.filtered then
-        local filterIcon = Instance.new("TextLabel")
-        filterIcon.Name = "FilterIcon"
-        filterIcon.Size = UDim2.new(0, 20, 0, 20)
-        filterIcon.Position = UDim2.new(1, -25, 0, 0)
-        filterIcon.BackgroundTransparency = 1
-        filterIcon.Text = "🛡️"
-        filterIcon.TextColor3 = Config.Colors.warning
-        filterIcon.Font = Enum.Font.SourceSans
-        filterIcon.TextSize = 12
-        
-        filterIcon.Parent = textFrame
-    end
-    
-    messageText.Parent = textFrame
-    textFrame.Parent = frame
-    
-    return frame
-end
-
--- ========== ОБРАБОТКА СООБЩЕНИЙ ==========
-
--- Отправка сообщения
-function ChatSystem:SendMessage(text)
-    -- Проверка кулдауна
-    local currentTime = os.time()
-    if currentTime - self.lastMessageTime < Config.Moderation.messageCooldown then
-        self:ShowSystemMessage("Не так быстро! Подождите...", "warning")
-        return false
-    end
-    
-    -- Проверка длины
-    if #text > Config.Moderation.maxMessageLength then
-        self:ShowSystemMessage("Сообщение слишком длинное!", "error")
-        return false
-    end
-    
-    -- Фильтрация
-    local filteredText = text
-    local wasFiltered = false
-    
-    if Config.Moderation.filterEnabled and ProfanityFilter then
-        filteredText = ProfanityFilter:Filter(text, {
-            aggressive = Config.Moderation.filterStrength == "strict",
-            replacement = "*"
-        })
-        
-        if filteredText ~= text then
-            wasFiltered = true
-            self.stats.wordsFiltered = self.stats.wordsFiltered + 1
-        end
-    end
-    
-    -- Подготовка данных
-    local messageData = {
-        text = filteredText,
-        originalText = text,
-        filtered = wasFiltered,
-        language = "ru"
-    }
-    
-    -- Показываем локально сразу
-    self:AddMessageToChat({
-        senderId = tostring(LocalPlayer.UserId),
-        senderName = LocalPlayer.Name,
-        text = filteredText,
-        timestamp = currentTime,
-        system = false,
-        filtered = wasFiltered
-    })
-    
-    self.lastMessageTime = currentTime
-    self.stats.messagesSent = self.stats.messagesSent + 1
-    
-    -- Отправляем на сервер
-    if self.isConnected and self.Firebase then
-        spawn(function()
-            local success, result = self.Firebase:SendMessage(messageData)
-            
-            if not success then
-                self:ShowSystemMessage("Не удалось отправить сообщение", "error")
-            end
-        end)
-    else
-        self:ShowSystemMessage("Работаем в оффлайн режиме", "warning")
-    end
-    
-    return true
-end
-
--- Обработка нового сообщения
-function ChatSystem:OnNewMessage(message)
-    -- Игнорируем свои сообщения (они уже показаны)
-    if message.senderId == tostring(LocalPlayer.UserId) then
-        return
-    end
-    
-    -- Игнорируем удаленные
-    if message.deleted then
-        return
-    end
-    
-    -- Добавляем в чат
-    self:AddMessageToChat(message)
-    self.stats.messagesReceived = self.stats.messagesReceived + 1
-    
-    -- Обновляем статистику
-    self:UpdateStats()
-end
-
--- Загрузка истории сообщений
-function ChatSystem:LoadMessageHistory()
-    if not self.Firebase or not self.isConnected then
-        self:ShowSystemMessage("Загрузка локальной истории...", "info")
-        return
-    end
-    
-    spawn(function()
-        self:ShowSystemMessage("Загрузка истории сообщений...", "info")
-        
-        local messages = self.Firebase:GetRecentMessages(Config.UI.messageLimit)
-        
-        if messages and #messages > 0 then
-            for _, msg in ipairs(messages) do
-                if not msg.deleted then
-                    self:AddMessageToChat(msg, true)
-                end
-            end
-            
-            self:ShowSystemMessage("Загружено " .. #messages .. " сообщений", "success")
-        else
-            self:ShowSystemMessage("История сообщений пуста", "info")
-        end
-    end)
-end
-
--- ========== СИСТЕМНЫЕ СООБЩЕНИЯ ==========
-
--- Показать системное сообщение
-function ChatSystem:ShowSystemMessage(text, type)
-    type = type or "info"
-    
-    local color
-    if type == "success" then
-        color = Config.Colors.success
-    elseif type == "error" then
-        color = Config.Colors.error
-    elseif type == "warning" then
-        color = Config.Colors.warning
-    else
-        color = Config.Colors.system
-    end
-    
-    self:AddMessageToChat({
-        senderId = "system",
-        senderName = "Система",
-        text = text,
-        timestamp = os.time(),
-        system = true
-    })
-end
-
--- Показать уведомление
-function ChatSystem:ShowNotification(text)
-    if not Config.Features.notifications then return end
-    
-    -- Создаем временное уведомление
-    local notification = Instance.new("Frame")
-    notification.Name = "Notification"
-    notification.Size = UDim2.new(0.3, 0, 0, 50)
-    notification.Position = UDim2.new(0.35, 0, 0.02, 0)
-    notification.BackgroundColor3 = Config.Colors.background
-    notification.BackgroundTransparency = 0.2
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = notification
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -20, 1, -10)
-    label.Position = UDim2.new(0, 10, 0, 5)
-    label.BackgroundTransparency = 1
-    label.Text = "💬 " .. text
-    label.TextColor3 = Config.Colors.text
-    label.TextWrapped = true
-    
-    label.Parent = notification
-    
-    if self.GUI and self.GUI.Main then
-        notification.Parent = self.GUI.Main
-    end
-    
-    -- Автоудаление через 3 секунды
-    spawn(function()
-        wait(3)
-        notification:Destroy()
-    end)
-end
-
--- ========== УПРАВЛЕНИЕ ИНТЕРФЕЙСОМ ==========
-
--- Переключение видимости
-function ChatSystem:ToggleVisibility()
-    self.isVisible = not self.isVisible
-    
-    if self.GUI and self.GUI.Container then
-        self.GUI.Container.Visible = self.isVisible
-    end
-    
-    local status = self.isVisible and "показан" : "скрыт"
-    print("👁️ Чат " .. status)
-end
-
--- Переключение минимизации
-function ChatSystem:ToggleMinimize()
-    if not self.GUI then return end
-    
-    local chatLog = self.GUI.ChatLog
-    local inputPanel = self.GUI.InputPanel
-    
-    if chatLog.Visible then
-        chatLog.Visible = false
-        inputPanel.Visible = false
-        self.GUI.Window.Size = UDim2.new(1, 0, 0.12, 0)
-    else
-        chatLog.Visible = true
-        inputPanel.Visible = true
-        self.GUI.Window.Size = UDim2.new(1, 0, 1, 0)
-    end
-end
-
--- Расчет позиции интерфейса
-function ChatSystem:CalculateUIPosition()
-    local width = Config.UI.width
-    local height = Config.UI.height
-    
-    if Config.UI.position == "bottom-left" then
-        return UDim2.new(0.02, 0, 1 - height - 0.02, 0)
-    elseif Config.UI.position == "bottom-right" then
-        return UDim2.new(1 - width - 0.02, 0, 1 - height - 0.02, 0)
-    elseif Config.UI.position == "top-left" then
-        return UDim2.new(0.02, 0, 0.02, 0)
-    elseif Config.UI.position == "top-right" then
-        return UDim2.new(1 - width - 0.02, 0, 0.02, 0)
-    else
-        return UDim2.new(0.02, 0, 1 - height - 0.02, 0)
-    end
-end
-
--- Настройка Drag & Drop
-function ChatSystem:SetupDrag(frame)
-    local dragging = false
-    local dragInput, dragStart, startPos
-    
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = self.GUI.Container.Position
-            
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input == dragInput then
-            local delta = input.Position - dragStart
-            self.GUI.Container.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
--- Обновление статуса
-function ChatSystem:UpdateStatus()
-    if not self.GUI or not self.GUI.StatusBar then return end
-    
-    local statusDot = self.GUI.StatusBar:FindFirstChild("StatusDot")
-    local statusText = self.GUI.StatusBar:FindFirstChild("StatusText")
-    
-    if statusDot and statusText then
-        if self.isConnected then
-            statusDot.BackgroundColor3 = Config.Colors.success
-            statusText.Text = "Онлайн"
-        else
-            statusDot.BackgroundColor3 = Config.Colors.error
-            statusText.Text = "Оффлайн"
-        end
-    end
-end
-
--- Обновление статистики
-function ChatSystem:UpdateStats()
-    self.stats.uptime = os.time() - self.stats.startTime
-    
-    -- Отправляем статистику на сервер раз в минуту
-    if self.isConnected and self.Firebase and os.time() - self.lastSyncTime > 60 then
-        self.Firebase:SendStats({
-            messagesSent = self.stats.messagesSent,
-            messagesReceived = self.stats.messagesReceived,
-            wordsFiltered = self.stats.wordsFiltered,
-            errors = self.stats.errors,
-            uptime = self.stats.uptime
-        })
-        
-        self.lastSyncTime = os.time()
-    end
-end
-
--- ========== ГОЛОСОВОЙ ЧАТ ==========
-
--- Инициализация голосового чата
-function ChatSystem:InitVoiceChat()
-    if not Config.Voice.enabled then return end
-    
-    print("🎤 Инициализация голосового чата...")
-    
-    -- Индикаторы голоса
-    if Config.Voice.showIndicators then
-        self:CreateVoiceIndicators()
-    end
-    
-    -- Обработка клавиши Push-to-Talk
-    if Config.Voice.pushToTalk then
-        UserInputService.InputBegan:Connect(function(input, processed)
-            if processed then return end
-            
-            if input.KeyCode == Config.Voice.voiceKey then
-                self:SetVoiceState(true)
-            end
-        end)
-        
-        UserInputService.InputEnded:Connect(function(input, processed)
-            if processed then return end
-            
-            if input.KeyCode == Config.Voice.voiceKey then
-                self:SetVoiceState(false)
-            end
-        end)
-    end
-    
-    print("✅ Голосовой чат инициализирован")
-end
-
--- Создание индикаторов голоса
-function ChatSystem:CreateVoiceIndicators()
-    self.Voice = {
-        indicators = {},
-        isTalking = false
-    }
-    
-    -- Создаем индикаторы для всех игроков
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            self:CreateVoiceIndicator(player)
-        end
-    end
-    
-    -- Обновляем при появлении новых игроков
-    Players.PlayerAdded:Connect(function(player)
-        if player ~= LocalPlayer then
-            self:CreateVoiceIndicator(player)
-        end
-    end)
-    
-    Players.PlayerRemoving:Connect(function(player)
-        if self.Voice.indicators[player] then
-            self.Voice.indicators[player]:Destroy()
-            self.Voice.indicators[player] = nil
-        end
-    end)
-end
-
--- Создание индикатора для игрока
-function ChatSystem:CreateVoiceIndicator(player)
-    local indicator = Instance.new("Frame")
-    indicator.Name = "VoiceIndicator_" .. player.Name
-    indicator.Size = UDim2.new(Config.Voice.indicatorSize, 0, Config.Voice.indicatorSize, 0)
-    indicator.BackgroundColor3 = Config.Voice.indicatorColor
-    indicator.BackgroundTransparency = 0.7
-    indicator.Visible = false
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = indicator
-    
-    if self.GUI and self.GUI.Main then
-        indicator.Parent = self.GUI.Main
-    end
-    
-    self.Voice.indicators[player] = indicator
-    
-    -- Обновляем позицию
-    spawn(function()
-        while indicator and indicator.Parent do
-            if player.Character and player.Character:FindFirstChild("Head") then
-                local headPos = player.Character.Head.Position + Vector3.new(0, 2, 0)
-                local screenPos, visible = workspace.CurrentCamera:WorldToViewportPoint(headPos)
-                
-                if visible then
-                    indicator.Position = UDim2.new(0, screenPos.X, 0, screenPos.Y)
-                    indicator.Visible = self.Voice.isTalking and player == LocalPlayer
-                else
-                    indicator.Visible = false
-                end
-            else
-                indicator.Visible = false
-            end
-            
-            wait(0.1)
-        end
-    end)
-end
-
--- Изменение состояния голоса
-function ChatSystem:SetVoiceState(talking)
-    if not Config.Voice.enabled then return end
-    
-    self.Voice.isTalking = talking
-    
-    -- Обновляем индикаторы
-    for player, indicator in pairs(self.Voice.indicators) do
-        if player == LocalPlayer then
-            indicator.Visible = talking
-        end
-    end
-    
-    -- Отправляем статус на сервер
-    if self.isConnected and self.Firebase then
-        -- Здесь можно отправить статус голоса другим игрокам
-    end
-end
-
--- ========== ОСНОВНАЯ ИНИЦИАЛИЗАЦИЯ ==========
-
--- Инициализация системы
-function ChatSystem:Init()
-    if self.isInitialized then return self end
-    
-    print("🚀 Инициализация Chat for Russian...")
-    
-    -- Создаем интерфейс
-    self:CreateGUI()
-    
-    -- Инициализируем Firebase
-    if Config.Features.autoConnect then
-        self:InitFirebase()
-    end
-    
-    -- Инициализируем голосовой чат
-    self:InitVoiceChat()
-    
-    -- Настройка горячих клавиш
-    self:SetupHotkeys()
-    
-    -- Приветственное сообщение
-    task.wait(1)
-    self:ShowSystemMessage("Добро пожаловать в Chat for Russian!", "info")
-    
-    if self.isConnected then
-        self:ShowSystemMessage("✅ Подключено к серверу чата", "success")
-    else
-        self:ShowSystemMessage("⚠️ Работаем в оффлайн режиме", "warning")
-    end
-    
-    -- Обновление статуса
-    self:UpdateStatus()
-    
-    -- Автообновление статистики
-    spawn(function()
-        while true do
-            wait(1)
-            self:UpdateStats()
-        end
-    end)
-    
-    self.isInitialized = true
-    
-    local loadTime = os.clock() - startTime
-    print("✅ Инициализация завершена за " .. string.format("%.2f", loadTime) .. " секунд")
     
     return self
 end
 
--- Настройка горячих клавиш
-function ChatSystem:SetupHotkeys()
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
+-- Тестовое подключение
+function FirebaseWrapper:_testConnection()
+    local url = self._config.baseUrl .. ".json?shallow=true"
+    
+    local success, response = pcall(function()
+        local result = HttpService:RequestAsync({
+            Url = url,
+            Method = "GET",
+            Headers = self:_getHeaders()
+        })
         
-        if input.KeyCode == Config.Controls.openChat then
-            if self.GUI and self.GUI.InputPanel then
-                local inputBox = self.GUI.InputPanel:FindFirstChild("InputBox")
-                if inputBox then
-                    inputBox:CaptureFocus()
-                end
+        return result.Success and result.StatusCode == 200
+    end)
+    
+    return success
+end
+
+-- Получение заголовков
+function FirebaseWrapper:_getHeaders()
+    local headers = {
+        ["Content-Type"] = "application/json"
+    }
+    
+    if self._config.authToken then
+        headers["Authorization"] = "Bearer " .. self._config.authToken
+    end
+    
+    return headers
+end
+
+-- ========== РАБОТА С СООБЩЕНИЯМИ ==========
+
+-- Отправка сообщения
+function FirebaseWrapper:SendMessage(messageData)
+    if not messageData or not messageData.text or #messageData.text == 0 then
+        return false, "Пустое сообщение"
+    end
+    
+    -- Ограничение длины
+    if #messageData.text > 1000 then
+        return false, "Сообщение слишком длинное"
+    end
+    
+    -- Подготовка данных
+    local player = Players.LocalPlayer
+    local data = {
+        id = HttpService:GenerateGUID(false),
+        senderId = tostring(player.UserId),
+        senderName = player.Name,
+        text = messageData.text,
+        originalText = messageData.originalText or messageData.text,
+        timestamp = os.time(),
+        gameId = tostring(game.GameId),
+        placeId = tostring(game.PlaceId),
+        filtered = messageData.filtered or false,
+        language = messageData.language or "ru",
+        color = messageData.color or "#FFFFFF",
+        deleted = false,
+        system = messageData.system or false
+    }
+    
+    -- Если не подключены, добавляем в очередь
+    if not self._config.connected then
+        table.insert(self._cache.pendingMessages, data)
+        return true, "Добавлено в очередь"
+    end
+    
+    -- Отправка на сервер
+    local url = self._config.baseUrl .. self._config.messagesPath .. "/" .. data.id .. ".json"
+    local jsonData = HttpService:JSONEncode(data)
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "PUT",
+            Headers = self:_getHeaders(),
+            Body = jsonData
+        })
+        
+        return response
+    end)
+    
+    if success and result.Success then
+        -- Кэшируем локально
+        self:_addToCache(data)
+        
+        -- Триггерим событие
+        self._events.OnMessage:Fire(data)
+        
+        -- Сохраняем последний ID
+        self._config.lastMessageId = data.id
+        
+        -- Автоочистка старых сообщений
+        if #self._cache.messages > self._config.maxMessages then
+            self:_cleanupOldMessages()
+        end
+        
+        return true, data.id
+    else
+        -- Добавляем в очередь на переотправку
+        table.insert(self._cache.messageQueue, {
+            data = data,
+            attempts = 0,
+            timestamp = os.time()
+        })
+        
+        return false, result or "Ошибка отправки"
+    end
+end
+
+-- Получение сообщений
+function FirebaseWrapper:GetMessages(options)
+    options = options or {}
+    local limit = options.limit or 50
+    local after = options.after or 0
+    local orderBy = options.orderBy or "timestamp"
+    
+    -- Сначала проверяем кэш
+    local cached = self:_getFromCache(limit, after, orderBy)
+    if #cached > 0 and not options.forceRefresh then
+        return cached
+    end
+    
+    -- Если не подключены, возвращаем кэш
+    if not self._config.connected then
+        return cached
+    end
+    
+    -- Загружаем с сервера
+    local url = self._config.baseUrl .. self._config.messagesPath .. ".json"
+    url = url .. "?orderBy=\"" .. orderBy .. "\""
+    
+    if after > 0 then
+        url = url .. "&startAt=" .. tostring(after)
+    end
+    
+    if limit > 0 then
+        url = url .. "&limitToLast=" .. tostring(limit)
+    end
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "GET",
+            Headers = self:_getHeaders()
+        })
+        
+        if response.Success and response.Body and response.Body ~= "null" then
+            return HttpService:JSONDecode(response.Body)
+        end
+        return {}
+    end)
+    
+    if success then
+        -- Конвертируем объект в массив и кэшируем
+        local messages = self:_processFirebaseData(result)
+        self:_updateCache(messages)
+        return messages
+    end
+    
+    return cached
+end
+
+-- Получение последних N сообщений
+function FirebaseWrapper:GetRecentMessages(count)
+    return self:GetMessages({limit = count or 20})
+end
+
+-- Удаление сообщения
+function FirebaseWrapper:DeleteMessage(messageId, isAdmin)
+    if not messageId then return false end
+    
+    -- Проверяем права
+    local player = Players.LocalPlayer
+    local message = self:GetMessageById(messageId)
+    
+    if not message then return false end
+    
+    -- Можно удалять свои сообщения или если админ
+    local canDelete = (message.senderId == tostring(player.UserId)) or isAdmin
+    
+    if not canDelete then
+        return false, "Нет прав на удаление"
+    end
+    
+    -- Отправляем запрос на удаление
+    local url = self._config.baseUrl .. self._config.messagesPath .. "/" .. messageId .. ".json"
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "PATCH",
+            Headers = self:_getHeaders(),
+            Body = HttpService:JSONEncode({deleted = true})
+        })
+        
+        return response.Success
+    end)
+    
+    if success then
+        -- Обновляем кэш
+        self:_markAsDeleted(messageId)
+        return true
+    end
+    
+    return false
+end
+
+-- Получение сообщения по ID
+function FirebaseWrapper:GetMessageById(messageId)
+    -- Ищем в кэше
+    for _, msg in ipairs(self._cache.messages) do
+        if msg.id == messageId then
+            return msg
+        end
+    end
+    
+    -- Если не в кэше, загружаем с сервера
+    if self._config.connected then
+        local url = self._config.baseUrl .. self._config.messagesPath .. "/" .. messageId .. ".json"
+        
+        local success, result = pcall(function()
+            local response = HttpService:RequestAsync({
+                Url = url,
+                Method = "GET",
+                Headers = self:_getHeaders()
+            })
+            
+            if response.Success and response.Body and response.Body ~= "null" then
+                return HttpService:JSONDecode(response.Body)
             end
-        elseif input.KeyCode == Config.Controls.toggleVisibility then
-            self:ToggleVisibility()
-        elseif input.KeyCode == Config.Controls.clearChat then
-            self:ClearChat()
-        elseif input.KeyCode == Config.Controls.settings then
-            self:ShowSettings()
+        end)
+        
+        if success then
+            return result
+        end
+    end
+    
+    return nil
+end
+
+-- ========== СИНХРОНИЗАЦИЯ В РЕАЛЬНОМ ВРЕМЕНИ ==========
+
+-- Запуск синхронизации
+function FirebaseWrapper:_startSync()
+    if not self._config.connected then return end
+    
+    -- Слушаем новые сообщения
+    self:_listenForNewMessages()
+    
+    -- Обработка очереди
+    self:_processQueue()
+    
+    -- Периодическая синхронизация
+    spawn(function()
+        while self._config.connected do
+            wait(10) -- Синхронизируем каждые 10 секунд
+            
+            -- Синхронизация сообщений
+            self:_syncMessages()
+            
+            -- Очистка старых сообщений
+            if os.time() - self._cache.lastSync > 60 then
+                self:_cleanupOldMessages()
+                self._cache.lastSync = os.time()
+            end
         end
     end)
 end
 
--- Очистка чата
-function ChatSystem:ClearChat()
-    if not self.GUI or not self.GUI.ChatLog then return end
+-- Прослушивание новых сообщений
+function FirebaseWrapper:_listenForNewMessages()
+    spawn(function()
+        local lastCheck = 0
+        
+        while self._config.connected do
+            wait(2) -- Проверяем каждые 2 секунды
+            
+            -- Получаем последние сообщения
+            local messages = self:GetMessages({
+                limit = 10,
+                after = lastCheck,
+                forceRefresh = true
+            })
+            
+            -- Обрабатываем новые
+            for _, msg in ipairs(messages) do
+                if msg.timestamp > lastCheck then
+                    -- Игнорируем свои сообщения
+                    if msg.senderId ~= tostring(Players.LocalPlayer.UserId) then
+                        self._events.OnMessage:Fire(msg)
+                    end
+                    lastCheck = math.max(lastCheck, msg.timestamp)
+                end
+            end
+        end
+    end)
+end
+
+-- Синхронизация сообщений
+function FirebaseWrapper:_syncMessages()
+    if not self._config.connected then return end
     
-    for _, frame in ipairs(self.GUI.MessageFrames) do
-        frame:Destroy()
+    -- Синхронизируем последние 100 сообщений
+    local serverMessages = self:GetMessages({limit = 100, forceRefresh = true})
+    
+    -- Обновляем кэш
+    self:_updateCache(serverMessages)
+end
+
+-- Обработка очереди сообщений
+function FirebaseWrapper:_processQueue()
+    spawn(function()
+        while true do
+            wait(5) -- Проверяем очередь каждые 5 секунд
+            
+            if #self._cache.messageQueue > 0 and self._config.connected then
+                local toRemove = {}
+                
+                for i, item in ipairs(self._cache.messageQueue) do
+                    if item.attempts < self._config.reconnectAttempts then
+                        local success = self:_retrySendMessage(item.data)
+                        if success then
+                            table.insert(toRemove, i)
+                        else
+                            item.attempts = item.attempts + 1
+                        end
+                    else
+                        -- Слишком много попыток, удаляем
+                        table.insert(toRemove, i)
+                    end
+                end
+                
+                -- Удаляем обработанные
+                for i = #toRemove, 1, -1 do
+                    table.remove(self._cache.messageQueue, toRemove[i])
+                end
+            end
+        end
+    end)
+end
+
+-- Повторная отправка сообщения
+function FirebaseWrapper:_retrySendMessage(data)
+    local url = self._config.baseUrl .. self._config.messagesPath .. "/" .. data.id .. ".json"
+    
+    local success = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "PUT",
+            Headers = self._config:getHeaders(),
+            Body = HttpService:JSONEncode(data)
+        })
+        
+        return response.Success
+    end)
+    
+    return success
+end
+
+-- ========== РАБОТА С ПОЛЬЗОВАТЕЛЯМИ ==========
+
+-- Регистрация пользователя в чате
+function FirebaseWrapper:RegisterUser()
+    local player = Players.LocalPlayer
+    
+    local userData = {
+        id = tostring(player.UserId),
+        name = player.Name,
+        displayName = player.DisplayName,
+        joined = os.time(),
+        lastSeen = os.time(),
+        messagesCount = 0,
+        isOnline = true,
+        gameId = tostring(game.GameId)
+    }
+    
+    local url = self._config.baseUrl .. self._config.usersPath .. "/" .. userData.id .. ".json"
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "PUT",
+            Headers = self:_getHeaders(),
+            Body = HttpService:JSONEncode(userData)
+        })
+        
+        return response.Success
+    end)
+    
+    if success then
+        print("👤 Пользователь зарегистрирован:", player.Name)
+        return true
     end
     
-    self.GUI.MessageFrames = {}
-    self.messages = {}
-    
-    self:ShowSystemMessage("Чат очищен", "info")
+    return false
 end
 
--- Показ настроек
-function ChatSystem:ShowSettings()
-    -- Здесь можно добавить панель настроек
-    self:ShowSystemMessage("Настройки будут в следующем обновлении!", "info")
-end
-
--- ========== ЭКСПОРТ И ЗАПУСК ==========
-
--- Автозапуск
-local success, result = pcall(function()
-    return ChatSystem:Init()
-end)
-
-if success then
-    -- Экспортируем для ручного управления
-    getgenv().ChatForRussian = ChatSystem
+-- Обновление статуса пользователя
+function FirebaseWrapper:UpdateUserStatus(isOnline)
+    local player = Players.LocalPlayer
     
-    print("\n" . rep("=", 60))
-    print("🎉 CHAT FOR RUSSIAN ГОТОВ К ИСПОЛЬЗОВАНИЮ!")
-    print(rep("=", 60))
-    print("\n📋 Команды:")
-    print("  T - Открыть чат")
-    print("  V - Говорить (удерживать)")
-    print("  F8 - Скрыть/показать интерфейс")
-    print("  F5 - Очистить чат")
-    print("  F9 - Настройки")
-    print("\n🔥 Firebase: " .. (ChatSystem.isConnected and "✅ Подключено" : "❌ Оффлайн"))
-    print("🛡️ Антимат: " .. (ProfanityFilter and "✅ Включен" : "❌ Выключен"))
-    print("🎤 Голосовой чат: " .. (Config.Voice.enabled and "✅ Включен" : "❌ Выключен"))
-    print(rep("=", 60))
+    local updateData = {
+        lastSeen = os.time(),
+        isOnline = isOnline or false
+    }
     
-    -- Сообщение в стандартный чат Roblox
+    local url = self._config.baseUrl .. self._config.usersPath .. "/" .. player.UserId .. ".json"
+    
     pcall(function()
-        game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(
-            "[Chat for Russian] Система активирована! Нажми T для чата."
-        )
+        HttpService:RequestAsync({
+            Url = url,
+            Method = "PATCH",
+            Headers = self:_getHeaders(),
+            Body = HttpService:JSONEncode(updateData)
+        })
     end)
-else
-    warn("\n❌ Ошибка инициализации Chat for Russian:")
-    warn(result)
+end
+
+-- Получение списка онлайн пользователей
+function FirebaseWrapper:GetOnlineUsers()
+    if not self._config.connected then return {} end
     
-    -- Простой fallback
-    local errorFrame = Instance.new("Frame")
-    errorFrame.Size = UDim2.new(0.4, 0, 0.2, 0)
-    errorFrame.Position = UDim2.new(0.3, 0, 0.4, 0)
-    errorFrame.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    errorFrame.Parent = PlayerGui
+    local url = self._config.baseUrl .. self._config.usersPath .. ".json"
+    url = url .. "?orderBy=\"isOnline\"&equalTo=true"
     
-    local errorText = Instance.new("TextLabel")
-    errorText.Text = "❌ Ошибка Chat for Russian\n\n" .. tostring(result)
-    errorText.Size = UDim2.new(1, -20, 1, -20)
-    errorText.Position = UDim2.new(0, 10, 0, 10)
-    errorText.TextColor3 = Color3.white
-    errorText.TextWrapped = true
-    errorText.Parent = errorFrame
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "GET",
+            Headers = self:_getHeaders()
+        })
+        
+        if response.Success and response.Body and response.Body ~= "null" then
+            return HttpService:JSONDecode(response.Body)
+        end
+        return {}
+    end)
+    
+    if success then
+        local users = {}
+        for id, data in pairs(result) do
+            if data and data.isOnline then
+                table.insert(users, {
+                    id = id,
+                    name = data.name,
+                    displayName = data.displayName,
+                    lastSeen = data.lastSeen
+                })
+            end
+        end
+        return users
+    end
+    
+    return {}
+end
+
+-- ========== СТАТИСТИКА ==========
+
+-- Отправка статистики
+function FirebaseWrapper:SendStats(stats)
+    if not stats then return end
+    
+    local url = self._config.baseUrl .. self._config.statsPath .. "/" .. os.date("%Y-%m-%d") .. ".json"
+    
+    pcall(function()
+        HttpService:RequestAsync({
+            Url = url,
+            Method = "PATCH",
+            Headers = self:_getHeaders(),
+            Body = HttpService:JSONEncode(stats)
+        })
+    end)
+end
+
+-- Получение статистики
+function FirebaseWrapper:GetStats(day)
+    day = day or os.date("%Y-%m-%d")
+    
+    local url = self._config.baseUrl .. self._config.statsPath .. "/" .. day .. ".json"
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = url,
+            Method = "GET",
+            Headers = self:_getHeaders()
+        })
+        
+        if response.Success and response.Body and response.Body ~= "null" then
+            return HttpService:JSONDecode(response.Body)
+        end
+        return {}
+    end)
+    
+    if success then
+        return result
+    end
+    
+    return {}
+end
+
+-- ========== КЭШИРОВАНИЕ ==========
+
+-- Добавление в кэш
+function FirebaseWrapper:_addToCache(message)
+    table.insert(self._cache.messages, message)
+    
+    -- Сортируем по времени
+    table.sort(self._cache.messages, function(a, b)
+        return (a.timestamp or 0) < (b.timestamp or 0)
+    })
+    
+    -- Ограничиваем размер кэша
+    if #self._cache.messages > self._config.maxMessages then
+        table.remove(self._cache.messages, 1)
+    end
+end
+
+-- Получение из кэша
+function FirebaseWrapper:_getFromCache(limit, after, orderBy)
+    local filtered = {}
+    local count = 0
+    
+    for i = #self._cache.messages, 1, -1 do
+        local msg = self._cache.messages[i]
+        
+        if not msg.deleted then
+            if after > 0 then
+                if (msg.timestamp or 0) > after then
+                    table.insert(filtered, msg)
+                    count = count + 1
+                end
+            else
+                table.insert(filtered, msg)
+                count = count + 1
+            end
+        end
+        
+        if count >= limit then
+            break
+        end
+    end
+    
+    -- Реверсируем, чтобы новые были последними
+    if orderBy == "timestamp" then
+        local reversed = {}
+        for i = #filtered, 1, -1 do
+            table.insert(reversed, filtered[i])
+        end
+        return reversed
+    end
+    
+    return filtered
+end
+
+-- Обновление кэша
+function FirebaseWrapper:_updateCache(messages)
+    for _, newMsg in ipairs(messages) do
+        local found = false
+        
+        for i, cachedMsg in ipairs(self._cache.messages) do
+            if cachedMsg.id == newMsg.id then
+                -- Обновляем существующее
+                self._cache.messages[i] = newMsg
+                found = true
+                break
+            end
+        end
+        
+        if not found then
+            self:_addToCache(newMsg)
+        end
+    end
+end
+
+-- Отметка как удаленного
+function FirebaseWrapper:_markAsDeleted(messageId)
+    for i, msg in ipairs(self._cache.messages) do
+        if msg.id == messageId then
+            self._cache.messages[i].deleted = true
+            break
+        end
+    end
+end
+
+-- Очистка старых сообщений
+function FirebaseWrapper:_cleanupOldMessages()
+    local cutoff = os.time() - self._config.cleanupInterval
+    local toRemove = {}
+    
+    for i, msg in ipairs(self._cache.messages) do
+        if (msg.timestamp or 0) < cutoff then
+            table.insert(toRemove, i)
+        end
+    end
+    
+    for i = #toRemove, 1, -1 do
+        table.remove(self._cache.messages, toRemove[i])
+    end
+    
+    if #toRemove > 0 then
+        print("🧹 Очищено старых сообщений:", #toRemove)
+    end
+end
+
+-- Обработка данных Firebase
+function FirebaseWrapper:_processFirebaseData(firebaseData)
+    if not firebaseData then return {} end
+    
+    local messages = {}
+    
+    for id, data in pairs(firebaseData) do
+        if data and not data.deleted then
+            data.id = id
+            table.insert(messages, data)
+        end
+    end
+    
+    -- Сортируем по времени
+    table.sort(messages, function(a, b)
+        return (a.timestamp or 0) < (b.timestamp or 0)
+    end)
+    
+    return messages
+end
+
+-- ========== СБОЙЫ И РЕКОНЕКТ ==========
+
+-- Переподключение
+function FirebaseWrapper:Reconnect()
+    print("🔄 Попытка переподключения...")
+    
+    local success = self:_testConnection()
+    if success then
+        self._config.connected = true
+        self._events.OnConnected:Fire()
+        self:_startSync()
+        return true
+    end
+    
+    return false
+end
+
+-- Отключение
+function FirebaseWrapper:Disconnect()
+    self._config.connected = false
+    
+    -- Обновляем статус пользователя
+    self:UpdateUserStatus(false)
+    
+    self._events.OnDisconnected:Fire()
+    print("🔌 Отключено от Firebase")
+end
+
+-- ========== УТИЛИТЫ ==========
+
+-- Получение событий
+function FirebaseWrapper:GetEvents()
+    return self._events
+end
+
+-- Проверка подключения
+function FirebaseWrapper:IsConnected()
+    return self._config.connected
+end
+
+-- Получение статистики кэша
+function FirebaseWrapper:GetCacheStats()
+    return {
+        messages = #self._cache.messages,
+        pending = #self._cache.pendingMessages,
+        queue = #self._cache.messageQueue,
+        lastSync = self._cache.lastSync
+    }
+end
+
+-- Полная очистка кэша
+function FirebaseWrapper:ClearCache()
+    self._cache = {
+        messages = {},
+        users = {},
+        lastSync = 0,
+        pendingMessages = {},
+        messageQueue = {}
+    }
+    
+    print("🧹 Кэш очищен")
 end
 
 -- Экспорт
-return ChatSystem
+return FirebaseWrapper
