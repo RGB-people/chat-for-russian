@@ -1,5 +1,5 @@
 local Firebase = {
-    URL = "https://chat-for-russian-default-rtdb.europe-west1.firebasedatabase.app/",
+    URL = "https://chat-for-russian-default-rtdb.europe-west1.firebasedatabase.app/messages.json",
     Messages = {}
 }
 
