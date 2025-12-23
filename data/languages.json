@@ -1,0 +1,129 @@
+{
+  "version": "1.0",
+  "languages": {
+    "ru": {
+      "code": "ru",
+      "name": "Русский",
+      "native_name": "Русский",
+      "flag": "🇷🇺",
+      "rtl": false,
+      "phrases": {
+        "welcome": "Добро пожаловать в Chat for Russian!",
+        "connected": "Подключено к серверу",
+        "disconnected": "Соединение потеряно",
+        "message_sent": "Сообщение отправлено",
+        "message_blocked": "Сообщение содержит запрещенный контент",
+        "typing": "печатает...",
+        "online": "онлайн",
+        "offline": "оффлайн",
+        "users_online": "пользователей онлайн",
+        "clear_chat": "Чат очищен",
+        "settings_saved": "Настройки сохранены"
+      },
+      "commands": {
+        "help": "Помощь",
+        "clear": "Очистить чат",
+        "users": "Пользователи онлайн",
+        "stats": "Статистика",
+        "color": "Изменить цвет",
+        "lang": "Изменить язык"
+      }
+    },
+    "en": {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "flag": "🇺🇸",
+      "rtl": false,
+      "phrases": {
+        "welcome": "Welcome to Chat for Russian!",
+        "connected": "Connected to server",
+        "disconnected": "Connection lost",
+        "message_sent": "Message sent",
+        "message_blocked": "Message contains prohibited content",
+        "typing": "typing...",
+        "online": "online",
+        "offline": "offline",
+        "users_online": "users online",
+        "clear_chat": "Chat cleared",
+        "settings_saved": "Settings saved"
+      },
+      "commands": {
+        "help": "Help",
+        "clear": "Clear chat",
+        "users": "Online users",
+        "stats": "Statistics",
+        "color": "Change color",
+        "lang": "Change language"
+      }
+    },
+    "uk": {
+      "code": "uk",
+      "name": "Ukrainian",
+      "native_name": "Українська",
+      "flag": "🇺🇦",
+      "rtl": false,
+      "phrases": {
+        "welcome": "Ласкаво просимо до Chat for Russian!",
+        "connected": "Підключено до сервера",
+        "disconnected": "З'єднання втрачено",
+        "message_sent": "Повідомлення надіслано",
+        "message_blocked": "Повідомлення містить заборонений вміст",
+        "typing": "друкує...",
+        "online": "онлайн",
+        "offline": "оффлайн",
+        "users_online": "користувачів онлайн",
+        "clear_chat": "Чат очищено",
+        "settings_saved": "Налаштування збережено"
+      }
+    },
+    "be": {
+      "code": "be",
+      "name": "Belarusian",
+      "native_name": "Беларуская",
+      "flag": "🇧🇾",
+      "rtl": false,
+      "phrases": {
+        "welcome": "Сардэчна запрашаем у Chat for Russian!",
+        "connected": "Падлучана да сервера",
+        "disconnected": "Злучэнне страчана",
+        "message_sent": "Паведамленне адпраўлена",
+        "message_blocked": "Паведамленне змяшчае забаронены змест",
+        "typing": "друкуе...",
+        "online": "анлайн",
+        "offline": "офлайн",
+        "users_online": "карыстальнікаў анлайн",
+        "clear_chat": "Чат ачышчаны",
+        "settings_saved": "Налады захаваны"
+      }
+    },
+    "kz": {
+      "code": "kz",
+      "name": "Kazakh",
+      "native_name": "Қазақша",
+      "flag": "🇰🇿",
+      "rtl": false,
+      "phrases": {
+        "welcome": "Chat for Russian-ге қош келдіңіз!",
+        "connected": "Серверге қосылды",
+        "disconnected": "Қосылым үзілді",
+        "message_sent": "Хабарлама жіберілді",
+        "message_blocked": "Хабарлама тыйым салынған мазмұнды қамтиды",
+        "typing": "теріп жатыр...",
+        "online": "онлайн",
+        "offline": "офлайн",
+        "users_online": "пайдаланушы онлайн",
+        "clear_chat": "Чат тазаланды",
+        "settings_saved": "Параметрлер сақталды"
+      }
+    }
+  },
+  "detection": {
+    "common_russian_words": ["привет", "пока", "спасибо", "да", "нет"],
+    "common_english_words": ["hello", "bye", "thanks", "yes", "no"],
+    "character_sets": {
+      "cyrillic": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+      "latin": "abcdefghijklmnopqrstuvwxyz"
+    }
+  }
+}
